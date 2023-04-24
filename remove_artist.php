@@ -2,45 +2,60 @@
 
 require_once './dbconnection.php';
 
-/* 
-$artist_id = $_POST['artist_id']; */
+// get the artist id from the request parameters
+/* $artist_id = $_GET['artist_id']; */
 $artist_id = 5;
 
 try {
-    $pdo = createDbConnection();
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->beginTransaction();
+  $conn = createDbConnection();
 
-    $stmt = $pdo->prepare("DELETE FROM playlist_track WHERE TrackId IN (SELECT TrackId FROM tracks WHERE AlbumId IN (SELECT AlbumId FROM albums WHERE ArtistId = :artist_id))");
-    $stmt->bindParam(':artist_id', $artist_id);
-    $stmt->execute();
+  // start a transaction
+  $conn->beginTransaction();
 
-    // Poistetaan artistin kappaleet myös invoice_items-taulusta
-    $stmt = $pdo->prepare("DELETE FROM invoice_items WHERE TrackId IN (SELECT TrackId FROM tracks WHERE Composer = :artist_id)");
-    $stmt->bindParam(':artist_id', $artist_id);
-    $stmt->execute();
+  // delete all invoice items associated with the artist's tracks
 
-    $stmt = $pdo->prepare("DELETE FROM tracks WHERE AlbumId IN (SELECT AlbumId FROM albums WHERE ArtistId = :artist_id)");
-    $stmt->bindParam(':artist_id', $artist_id);
-    $stmt->execute();
+  // delete playlist_track entries associated with the artist's tracks
+  $sql = "DELETE FROM playlist_track WHERE TrackId IN (SELECT TrackId FROM tracks WHERE AlbumId IN (SELECT AlbumId FROM albums WHERE ArtistId = :artist_id))";
+  $stmt = $conn->prepare($sql);
+  $stmt->bindParam(':artist_id', $artist_id, PDO::PARAM_INT);
+  $stmt->execute();
 
-      // Poista tiedot invoice_items-taulusta, joiden kappale kuuluu poistetun artistin albumeihin
-      $stmt = $pdo->prepare("DELETE FROM invoice_items WHERE TrackId IN (SELECT TrackId FROM tracks WHERE AlbumId IN (SELECT AlbumId FROM albums WHERE ArtistId = :artist_id))");
-      $stmt->bindParam(':artist_id', $artist_id);
-      $stmt->execute();
+  $sql = "DELETE FROM invoice_items
+            WHERE TrackId IN (SELECT TrackId FROM tracks WHERE AlbumId IN (SELECT AlbumId FROM albums WHERE ArtistId = :artist_id))";
+  $stmt = $conn->prepare($sql);
+  $stmt->bindParam(':artist_id', $artist_id, PDO::PARAM_INT);
+  $stmt->execute();
 
-    $stmt = $pdo->prepare("DELETE FROM albums WHERE ArtistId = :artist_id");
-    $stmt->bindParam(':artist_id', $artist_id);
-    $stmt->execute();
+  // delete all tracks associated with the artist's albums
+  $sql = "DELETE FROM tracks WHERE AlbumId IN (SELECT AlbumId FROM albums WHERE ArtistId = :artist_id)";
+  $stmt = $conn->prepare($sql);
+  $stmt->bindParam(':artist_id', $artist_id, PDO::PARAM_INT);
+  $stmt->execute();
 
-    $stmt = $pdo->prepare("DELETE FROM artists WHERE ArtistId = :artist_id");
-    $stmt->bindParam(':artist_id', $artist_id);
-    $stmt->execute();
 
-    $pdo->commit();
 
-    echo "Artist and related data removed successfully.";
+  // delete all albums associated with the artist
+  $sql = "DELETE FROM albums WHERE ArtistId = :artist_id";
+  $stmt = $conn->prepare($sql);
+  $stmt->bindParam(':artist_id', $artist_id, PDO::PARAM_INT);
+  $stmt->execute();
+
+  // delete the artist
+  $sql = "DELETE FROM artists WHERE ArtistId = :artist_id";
+  $stmt = $conn->prepare($sql);
+  $stmt->bindParam(':artist_id', $artist_id, PDO::PARAM_INT);
+  $stmt->execute();
+
+  // commit the transaction
+  $conn->commit();
+
+  echo "Artist and associated data removed successfully.";
 } catch (PDOException $e) {
-    $pdo->rollBack();
-    echo "Error removing artist: " . $e->getMessage();
+  // rollback the transaction if an error occurred
+  $conn->rollback();
+
+  echo "Error: " . $e->getMessage();
 }
+
+// close the database connection
+$conn = null;
